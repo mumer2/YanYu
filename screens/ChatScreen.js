@@ -125,85 +125,85 @@ export default function ChatScreen({ navigation }) {
     }, 1000);
   };
 
-  return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      style={{ flex: 1 }}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 60 : 0}
-    >
-      <SafeAreaView style={styles.wrapper} edges={['bottom']}>
-        <View style={styles.container}>
-          {/* Timer */}
-          <View style={styles.timerBar}>
-            <Text style={styles.timerText}>
-              ⏱ {formatTime(seconds)} {isSubscribed ? '(Subscribed)' : '(Free)'}
-            </Text>
-          </View>
+ return (
+  <KeyboardAvoidingView
+    behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    style={{ flex: 1 }}
+    keyboardVerticalOffset={Platform.OS === 'ios' ? 60 : 0}
+  >
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }} edges={['bottom', 'left', 'right']}>
+      {/* Timer Bar */}
+      <View style={styles.timerBar}>
+        <Text style={styles.timerText}>
+          ⏱ {formatTime(seconds)} {isSubscribed ? '(Subscribed)' : '(Free)'}
+        </Text>
+      </View>
 
-          {/* Messages */}
-          <FlatList
-            data={messages}
-            inverted
-            keyExtractor={(item) => item.id}
-            renderItem={renderMessage}
-            contentContainerStyle={{ padding: 10, paddingBottom: 80 }}
-          />
+      {/* Chat List */}
+      <View style={{ flex: 1 }}>
+        <FlatList
+          data={messages}
+          inverted
+          keyExtractor={(item) => item.id}
+          renderItem={renderMessage}
+          contentContainerStyle={{ padding: 10, paddingBottom: 20 }}
+        />
+      </View>
 
-          {/* Input */}
-          <View style={styles.inputContainer}>
-            <TextInput
-              style={styles.input}
-              placeholder="Type a message..."
-              value={input}
-              onChangeText={setInput}
-              editable={isSubscribed || seconds < 60}
-            />
-            <TouchableOpacity
-              onPress={sendMessage}
-              style={[
-                styles.sendButton,
-                !(isSubscribed || seconds < 60) && { backgroundColor: '#aaa' },
-              ]}
-              disabled={!(isSubscribed || seconds < 60)}
-            >
-              <Text style={styles.sendText}>Send</Text>
-            </TouchableOpacity>
-          </View>
+      {/* Input */}
+      <View style={styles.inputContainer}>
+        <TextInput
+          style={styles.input}
+          placeholder="Type a message..."
+          value={input}
+          onChangeText={setInput}
+          editable={isSubscribed || seconds < 60}
+        />
+        <TouchableOpacity
+          onPress={sendMessage}
+          style={[
+            styles.sendButton,
+            !(isSubscribed || seconds < 60) && { backgroundColor: '#aaa' },
+          ]}
+          disabled={!(isSubscribed || seconds < 60)}
+        >
+          <Text style={styles.sendText}>Send</Text>
+        </TouchableOpacity>
+      </View>
+    </SafeAreaView>
+
+    {/* 🔒 Lock Modal */}
+    <Modal visible={showLockModal} transparent animationType="slide">
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalBox}>
+          <Text style={styles.modalTitle}>Trial Ended</Text>
+          <Text style={styles.modalText}>
+            Your free trial has ended. Subscribe for ¥38/month to continue chatting.
+          </Text>
+          <Pressable style={styles.subscribeButton} onPress={handleSubscribe}>
+            <Text style={styles.subscribeText}>Subscribe Now</Text>
+          </Pressable>
         </View>
+      </View>
+    </Modal>
 
-        {/* 🔒 Lock Modal */}
-        <Modal visible={showLockModal} transparent animationType="slide">
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalBox}>
-              <Text style={styles.modalTitle}>Trial Ended</Text>
-              <Text style={styles.modalText}>
-                Your free trial has ended. Subscribe for ¥38/month to continue chatting.
-              </Text>
-              <Pressable style={styles.subscribeButton} onPress={handleSubscribe}>
-                <Text style={styles.subscribeText}>Subscribe Now</Text>
-              </Pressable>
-            </View>
-          </View>
-        </Modal>
-
-        {/* ⚠️ Warning Modal */}
-        <Modal visible={showWarningModal} transparent animationType="fade">
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalBox}>
-              <Text style={styles.modalTitle}>⏰ Time Running Out</Text>
-              <Text style={styles.modalText}>
-                You have less than 10 seconds left in your free trial.
-              </Text>
-              <Pressable onPress={() => setShowWarningModal(false)} style={styles.subscribeButton}>
-                <Text style={styles.subscribeText}>Continue</Text>
-              </Pressable>
-            </View>
-          </View>
-        </Modal>
-      </SafeAreaView>
-    </KeyboardAvoidingView>
-  );
-}
+    {/* ⚠️ Warning Modal */}
+    <Modal visible={showWarningModal} transparent animationType="fade">
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalBox}>
+          <Text style={styles.modalTitle}>⏰ Time Running Out</Text>
+          <Text style={styles.modalText}>
+            You have less than 10 seconds left in your free trial.
+          </Text>
+          <Pressable onPress={() => setShowWarningModal(false)} style={styles.subscribeButton}>
+            <Text style={styles.subscribeText}>Continue</Text>
+          </Pressable>
+        </View>
+      </View>
+    </Modal>
+  </KeyboardAvoidingView>
+);
+};
 
 const styles = StyleSheet.create({
   wrapper: { flex: 1, backgroundColor: '#fff' },

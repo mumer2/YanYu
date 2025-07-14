@@ -9,7 +9,7 @@ import {
 import { auth, db } from '../services/firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 
-export default function SettingsScreen() {
+export default function SettingsScreen({ navigation }) {
   const user = auth.currentUser;
   const [selectedLang, setSelectedLang] = useState('English');
 
@@ -60,6 +60,14 @@ export default function SettingsScreen() {
           </Text>
         </TouchableOpacity>
       ))}
+
+      <TouchableOpacity
+  style={{ marginTop: 30 }}
+  onPress={() => navigation.navigate('DeleteAccount')}
+>
+  <Text style={{ color: 'red', fontSize: 16 }}>Delete My Account</Text>
+</TouchableOpacity>
+
     </View>
   );
 }

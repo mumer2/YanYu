@@ -10,7 +10,11 @@ import {
   Platform,
   ActivityIndicator,
 } from 'react-native';
-import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
+import {
+  createUserWithEmailAndPassword,
+  updateProfile,
+  signOut,
+} from 'firebase/auth';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '../services/firebase';
 
@@ -18,7 +22,7 @@ export default function RegisterScreen({ navigation }) {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false); // 🔄 Loading state
+  const [loading, setLoading] = useState(false);
 
   const handleRegister = async () => {
     if (!name || !email || !password) {
@@ -26,16 +30,18 @@ export default function RegisterScreen({ navigation }) {
       return;
     }
 
-    setLoading(true); // 🔄 Show spinner
+    setLoading(true);
 
     try {
+      // 1️⃣ Create account
       const userCredential = await createUserWithEmailAndPassword(auth, email.trim(), password);
+
+      // 2️⃣ Set display name
       await updateProfile(userCredential.user, { displayName: name });
 
-      const uid = userCredential.user.uid;
-
-      await setDoc(doc(db, 'users', uid), {
-        uid,
+      // 3️⃣ Save user data to Firestore
+      await setDoc(doc(db, 'users', userCredential.user.uid), {
+        uid: userCredential.user.uid,
         name,
         email: userCredential.user.email,
         createdAt: serverTimestamp(),
@@ -43,10 +49,22 @@ export default function RegisterScreen({ navigation }) {
         isPaid: false,
         language: 'en',
       });
+
+      // 4️⃣ Sign out to avoid auto-login (controlled by onAuthStateChanged)
+      await signOut(auth);
+
+      // 5️⃣ Navigate directly to login screen
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'Login' }],
+      });
+
+      Alert.alert('Success', 'Account created! Please log in.');
+
     } catch (error) {
       Alert.alert('Registration Failed', error.message);
     } finally {
-      setLoading(false); // 🔄 Hide spinner
+      setLoading(false);
     }
   };
 
@@ -83,11 +101,7 @@ export default function RegisterScreen({ navigation }) {
       />
 
       <TouchableOpacity style={styles.button} onPress={handleRegister} disabled={loading}>
-        {loading ? (
-          <ActivityIndicator color="#fff" />
-        ) : (
-          <Text style={styles.buttonText}>Register</Text>
-        )}
+        {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Register</Text>}
       </TouchableOpacity>
 
       <TouchableOpacity onPress={() => navigation.navigate('Login')}>
@@ -102,24 +116,12 @@ const styles = StyleSheet.create({
   logo: { fontSize: 28, fontWeight: 'bold', color: '#3f51b5', marginBottom: 10 },
   title: { fontSize: 20, marginBottom: 20 },
   input: {
-    width: '100%',
-    height: 50,
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    paddingHorizontal: 15,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    marginBottom: 15,
-    fontSize: 16,
+    width: '100%', height: 50, backgroundColor: '#fff', borderRadius: 12,
+    paddingHorizontal: 15, borderWidth: 1, borderColor: '#ddd', marginBottom: 15, fontSize: 16,
   },
   button: {
-    width: '100%',
-    backgroundColor: '#3f51b5',
-    padding: 15,
-    borderRadius: 12,
-    alignItems: 'center',
-    marginBottom: 15,
-    opacity: 1,
+    width: '100%', backgroundColor: '#3f51b5',
+    padding: 15, borderRadius: 12, alignItems: 'center', marginBottom: 15,
   },
   buttonText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
   link: { color: '#3f51b5', fontSize: 15 },

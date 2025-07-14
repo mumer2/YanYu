@@ -14,10 +14,29 @@ import {
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '../services/firebase';
 
+// ✅ Regex for validation
+const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const passwordRegex = /^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d]{8,}$/;
+
 export default function LoginScreen({ navigation }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false); // 🔄 loading state
+  const [loading, setLoading] = useState(false);
+
+  const validateInputs = () => {
+    if (!emailRegex.test(email)) {
+      Alert.alert('Invalid Email', 'Please enter a valid email address.');
+      return false;
+    }
+    if (!passwordRegex.test(password)) {
+      Alert.alert(
+        'Weak Password',
+        'Password must be at least 8 characters long and include both letters and numbers.'
+      );
+      return false;
+    }
+    return true;
+  };
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -25,14 +44,15 @@ export default function LoginScreen({ navigation }) {
       return;
     }
 
-    setLoading(true); // show spinner
+    if (!validateInputs()) return;
 
+    setLoading(true);
     try {
       await signInWithEmailAndPassword(auth, email.trim(), password);
     } catch (error) {
       Alert.alert('Login Failed', error.message);
     } finally {
-      setLoading(false); // hide spinner
+      setLoading(false);
     }
   };
 
@@ -70,6 +90,10 @@ export default function LoginScreen({ navigation }) {
 
       <TouchableOpacity onPress={() => navigation.navigate('Register')}>
         <Text style={styles.link}>Don't have an account? Register</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity onPress={() => navigation.navigate('ForgotPassword')}>
+        <Text style={[styles.link, { marginTop: 10 }]}>Forgot Password?</Text>
       </TouchableOpacity>
     </KeyboardAvoidingView>
   );
