@@ -21,7 +21,6 @@ import {
   onSnapshot,
   query,
   orderBy,
-  getDocs,
 } from 'firebase/firestore';
 import { signOut } from 'firebase/auth';
 
@@ -34,50 +33,77 @@ export default function HomeScreen({ navigation }) {
   useEffect(() => {
     if (!user) return;
 
-    const chatsRef = collection(db, 'friends', user.uid, 'list');
-    const unsubscribe = onSnapshot(chatsRef, async (snapshot) => {
-      try {
-        const chatList = await Promise.all(
-          snapshot.docs.map(async (docSnap) => {
-            const friendId = docSnap.id;
-            const friendDataRef = doc(db, 'users', friendId);
-            const friendDataSnap = await getDoc(friendDataRef);
+    const friendsRef = collection(db, 'friends', user.uid, 'list');
+    const unsubscribe = onSnapshot(friendsRef, async (snapshot) => {
+      const newChats = await Promise.all(
+        snapshot.docs.map(async (docSnap) => {
+          const friendId = docSnap.id;
+          const userId = user.uid;
+          const roomId = [userId, friendId].sort().join('_');
+          const friendRef = doc(db, 'users', friendId);
+          const friendSnap = await getDoc(friendRef);
 
-            let name = 'Unknown';
-            let email = '';
+          let name = 'Unknown';
+          let email = '';
+          if (friendSnap.exists()) {
+            const data = friendSnap.data();
+            name = data.name || 'No Name';
+            email = data.email || '';
+          }
 
-            if (friendDataSnap.exists()) {
-              const data = friendDataSnap.data();
-              name = data.name || 'No Name';
-              email = data.email || '';
-            }
+          return {
+            id: friendId,
+            name,
+            email,
+            roomId,
+            lastMessage: '',
+            unreadCount: 0,
+          };
+        })
+      );
 
-            const roomId = [user.uid, friendId].sort().join('_');
-            const msgQuery = query(
-              collection(db, 'chats', roomId, 'messages'),
-              orderBy('createdAt', 'desc')
-            );
-            const msgSnap = await getDocs(msgQuery);
-            const lastMessage = msgSnap.docs[0]?.data()?.text || '';
-
-            return {
-              id: friendId,
-              name,
-              email,
-              lastMessage,
-              time: '',
-            };
-          })
-        );
-
-        setChats(chatList);
-      } catch (error) {
-        console.error('Error fetching chats:', error);
-      }
+      setChats(newChats);
     });
 
-    return () => unsubscribe(); // cleanup listener on unmount
+    return () => unsubscribe();
   }, [user]);
+
+  // Live updates for unread counts and last messages
+  useEffect(() => {
+    const unsubscribers = chats.map((chat, index) => {
+      const msgRef = collection(db, 'chats', chat.roomId, 'messages');
+      const q = query(msgRef, orderBy('createdAt', 'desc'));
+
+      return onSnapshot(q, (snapshot) => {
+        let unread = 0;
+        let lastMessage = '';
+
+        snapshot.docs.forEach((docSnap, i) => {
+          const data = docSnap.data();
+          if (i === 0) {
+            lastMessage = data.text || '';
+          }
+          if (!data.readBy?.includes(user.uid)) {
+            unread++;
+          }
+        });
+
+        setChats((prev) => {
+          const updated = [...prev];
+          updated[index] = {
+            ...updated[index],
+            lastMessage,
+            unreadCount: unread,
+          };
+          return updated;
+        });
+      });
+    });
+
+    return () => {
+      unsubscribers.forEach((unsub) => unsub());
+    };
+  }, [chats]);
 
   const filteredChats = chats.filter((chat) =>
     chat.name.toLowerCase().includes(search.toLowerCase())
@@ -100,7 +126,14 @@ export default function HomeScreen({ navigation }) {
         <Ionicons name="person-circle" size={42} color="#555" />
       </View>
       <View style={styles.chatContent}>
-        <Text style={styles.chatName}>{item.name}</Text>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+          <Text style={styles.chatName}>{item.name}</Text>
+          {item.unreadCount > 0 && (
+            <View style={styles.badge}>
+              <Text style={styles.badgeText}>{item.unreadCount}</Text>
+            </View>
+          )}
+        </View>
         <Text style={styles.chatMessage} numberOfLines={1}>
           {item.lastMessage || 'No messages yet.'}
         </Text>
@@ -230,6 +263,20 @@ const styles = StyleSheet.create({
   chatName: { fontSize: 16, fontWeight: 'bold' },
   chatMessage: { color: '#666', marginTop: 2 },
   chatTime: { fontSize: 12, color: '#999' },
+  badge: {
+    backgroundColor: '#FF3B30',
+    borderRadius: 10,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    marginLeft: 5,
+    minWidth: 20,
+    alignItems: 'center',
+  },
+  badgeText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 12,
+  },
   modalOverlay: {
     flex: 1,
     justifyContent: 'flex-start',

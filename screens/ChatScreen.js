@@ -19,9 +19,13 @@ import {
   addDoc,
   query,
   orderBy,
-  getDocs,
   serverTimestamp,
+  updateDoc,
+  onSnapshot,
+  doc,
+  getDoc,
 } from 'firebase/firestore';
+import { sendPushNotification } from '../utils/sendPushNotification';
 
 export default function ChatScreen({ route, navigation }) {
   const { friend } = route.params;
@@ -53,25 +57,35 @@ export default function ChatScreen({ route, navigation }) {
   useEffect(() => {
     if (!user || !friend) return;
 
-    const fetchMessages = async () => {
-      try {
-        const messagesRef = collection(db, 'chats', chatRoomId, 'messages');
-        const q = query(messagesRef, orderBy('createdAt', 'desc'));
-        const snapshot = await getDocs(q);
+    const messagesRef = collection(db, 'chats', chatRoomId, 'messages');
+    const q = query(messagesRef, orderBy('createdAt', 'desc'));
 
-        const fetched = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          text: doc.data().text,
-          sender: doc.data().sender,
-        }));
+    const unsubscribe = onSnapshot(q, async (snapshot) => {
+      const updatedMessages = await Promise.all(
+        snapshot.docs.map(async (docSnap) => {
+          const data = docSnap.data();
+          const isUnread = !data.readBy?.includes(currentUserId);
 
-        setMessages(fetched);
-      } catch (error) {
-        console.error('Error fetching messages:', error);
-      }
-    };
+          // Mark as read if not already
+          if (isUnread) {
+            await updateDoc(docSnap.ref, {
+              readBy: [...(data.readBy || []), currentUserId],
+            });
+          }
 
-    fetchMessages();
+          return {
+            id: docSnap.id,
+            text: data.text,
+            sender: data.sender,
+            readBy: data.readBy || [],
+          };
+        })
+      );
+
+      setMessages(updatedMessages);
+    });
+
+    return () => unsubscribe();
   }, [user, friend]);
 
   useEffect(() => {
@@ -109,17 +123,23 @@ export default function ChatScreen({ route, navigation }) {
       text: input.trim(),
       sender: currentUserId,
       createdAt: serverTimestamp(),
+      readBy: [currentUserId],
     };
 
     try {
       const messagesRef = collection(db, 'chats', chatRoomId, 'messages');
-      const docRef = await addDoc(messagesRef, newMessage);
-
-      setMessages((prev) => [
-        { id: docRef.id, text: input.trim(), sender: currentUserId },
-        ...prev,
-      ]);
+      await addDoc(messagesRef, newMessage);
       setInput('');
+
+      const friendRef = doc(db, 'users', friend.uid);
+      const friendSnap = await getDoc(friendRef);
+
+      if (friendSnap.exists()) {
+        const { pushToken } = friendSnap.data();
+        if (pushToken) {
+          await sendPushNotification(pushToken, user.displayName || 'New Message', input.trim());
+        }
+      }
     } catch (error) {
       console.error('❌ Failed to send message:', error);
     }
@@ -127,14 +147,14 @@ export default function ChatScreen({ route, navigation }) {
 
   const renderMessage = ({ item }) => {
     const isMe = item.sender === currentUserId;
+    const isRead = item.readBy?.includes(friend.uid);
+
     return (
-      <View
-        style={[
-          styles.messageBubble,
-          isMe ? styles.userBubble : styles.friendBubble,
-        ]}
-      >
+      <View style={[styles.messageBubble, isMe ? styles.userBubble : styles.friendBubble]}>
         <Text style={styles.messageText}>{item.text}</Text>
+        {isMe && (
+          <Text style={styles.readReceipt}>{isRead ? '✔✔' : '✔'}</Text>
+        )}
       </View>
     );
   };
@@ -154,14 +174,12 @@ export default function ChatScreen({ route, navigation }) {
       keyboardVerticalOffset={Platform.OS === 'ios' ? 60 : 0}
     >
       <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }} edges={['bottom']}>
-        {/* Timer */}
         <View style={styles.timerBar}>
           <Text style={styles.timerText}>
             ⏱ {formatTime(seconds)} {isSubscribed ? '(Subscribed)' : '(Free)'}
           </Text>
         </View>
 
-        {/* Chat List */}
         <FlatList
           data={messages}
           inverted
@@ -170,7 +188,6 @@ export default function ChatScreen({ route, navigation }) {
           contentContainerStyle={{ padding: 12 }}
         />
 
-        {/* Input */}
         <View style={styles.inputContainer}>
           <TextInput
             style={styles.input}
@@ -181,10 +198,7 @@ export default function ChatScreen({ route, navigation }) {
           />
           <Pressable
             onPress={sendMessage}
-            style={[
-              styles.sendButton,
-              !(isSubscribed || seconds < 60) && { backgroundColor: '#aaa' },
-            ]}
+            style={[styles.sendButton, !(isSubscribed || seconds < 60) && { backgroundColor: '#aaa' }]}
             disabled={!(isSubscribed || seconds < 60)}
           >
             <Text style={styles.sendText}>Send</Text>
@@ -192,7 +206,7 @@ export default function ChatScreen({ route, navigation }) {
         </View>
       </SafeAreaView>
 
-      {/* 🔒 Lock Modal */}
+      {/* Modals */}
       <Modal visible={showLockModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalBox}>
@@ -207,7 +221,6 @@ export default function ChatScreen({ route, navigation }) {
         </View>
       </Modal>
 
-      {/* ⚠️ Warning Modal */}
       <Modal visible={showWarningModal} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalBox}>
@@ -222,7 +235,6 @@ export default function ChatScreen({ route, navigation }) {
         </View>
       </Modal>
 
-      {/* ⋮ Dotted Menu Modal */}
       <Modal
         visible={menuVisible}
         transparent
@@ -231,17 +243,10 @@ export default function ChatScreen({ route, navigation }) {
       >
         <Pressable style={styles.menuOverlay} onPress={() => setMenuVisible(false)}>
           <View style={styles.menuBox}>
-            <Pressable style={styles.menuItem} onPress={() => {
-              setMenuVisible(false);
-              // TODO: Add profile navigation
-            }}>
+            <Pressable style={styles.menuItem} onPress={() => setMenuVisible(false)}>
               <Text style={styles.menuText}>👤 View Profile</Text>
             </Pressable>
-
-            <Pressable style={styles.menuItem} onPress={() => {
-              setMenuVisible(false);
-              // TODO: Add block/report functionality
-            }}>
+            <Pressable style={styles.menuItem} onPress={() => setMenuVisible(false)}>
               <Text style={styles.menuText}>🚫 Block User</Text>
             </Pressable>
           </View>
@@ -269,6 +274,8 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     marginVertical: 5,
     maxWidth: '75%',
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   userBubble: {
     backgroundColor: '#DCF8C6',
@@ -281,6 +288,11 @@ const styles = StyleSheet.create({
   messageText: {
     fontSize: 16,
     color: '#000',
+  },
+  readReceipt: {
+    marginLeft: 8,
+    fontSize: 12,
+    color: '#007AFF',
   },
   inputContainer: {
     flexDirection: 'row',
@@ -332,8 +344,6 @@ const styles = StyleSheet.create({
     borderRadius: 25,
   },
   subscribeText: { color: '#fff', fontWeight: 'bold' },
-
-  // Menu styles
   menuOverlay: {
     flex: 1,
     justifyContent: 'flex-start',

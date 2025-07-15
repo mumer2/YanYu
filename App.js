@@ -1,11 +1,12 @@
-// App.js
 import React, { useEffect, useState } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import { onAuthStateChanged } from 'firebase/auth';
-import { auth } from './services/firebase';
+import { auth, db } from './services/firebase';
+import { doc, setDoc } from 'firebase/firestore';
+import { registerForPushNotificationsAsync } from './services/notifications';
 
 // Screens
 import SplashScreen from './screens/SplashScreen';
@@ -24,7 +25,6 @@ import DeleteAccountScreen from './screens/DeleteAccountScreen';
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
 
-// ✅ Tabs shown only after login
 function MainTabs() {
   return (
     <Tab.Navigator
@@ -42,8 +42,8 @@ function MainTabs() {
       })}
     >
       <Tab.Screen name="Home" component={HomeScreen} />
-      <Tab.Screen name="AddFriend" component={AddFriendScreen} options={{headerShown:true, title: 'Add Friends' }}/>
-      <Tab.Screen name="FriendsList" component={FriendsListScreen} options={{headerShown:true, title: 'Friends List' }}/>
+      <Tab.Screen name="AddFriend" component={AddFriendScreen} options={{ headerShown: true, title: 'Add Friends' }} />
+      <Tab.Screen name="FriendsList" component={FriendsListScreen} options={{ headerShown: true, title: 'Friends List' }} />
     </Tab.Navigator>
   );
 }
@@ -53,9 +53,19 @@ export default function App() {
   const [initializing, setInitializing] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       setUser(firebaseUser);
       setInitializing(false);
+
+      if (firebaseUser) {
+        const token = await registerForPushNotificationsAsync();
+
+        if (token) {
+          await setDoc(doc(db, 'users', firebaseUser.uid), {
+            pushToken: token,
+          }, { merge: true });
+        }
+      }
     });
 
     return unsubscribe;
@@ -69,12 +79,11 @@ export default function App() {
         {user ? (
           <>
             <Stack.Screen name="Main" component={MainTabs} />
-            <Stack.Screen name="Chat" component={ChatScreen} options={{headerShown: true,title: 'Chat',}} />
-            <Stack.Screen name="Profile" component={ProfileScreen} options={{headerShown: true,title: 'Profile',}} />
-            <Stack.Screen name="EditProfile" component={EditProfileScreen} options={{headerShown: true,title: 'Edit Profile',}} />
-            <Stack.Screen name="Settings" component={SettingsScreen} options={{headerShown: true,title: 'Settings',}}/>
+            <Stack.Screen name="Chat" component={ChatScreen} options={{ headerShown: true, title: 'Chat' }} />
+            <Stack.Screen name="Profile" component={ProfileScreen} options={{ headerShown: true, title: 'Profile' }} />
+            <Stack.Screen name="EditProfile" component={EditProfileScreen} options={{ headerShown: true, title: 'Edit Profile' }} />
+            <Stack.Screen name="Settings" component={SettingsScreen} options={{ headerShown: true, title: 'Settings' }} />
             <Stack.Screen name="DeleteAccount" component={DeleteAccountScreen} />
-
           </>
         ) : (
           <>

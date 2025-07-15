@@ -80,9 +80,9 @@ export default function FriendsListScreen() {
       <View style={styles.info}>
         <Text style={styles.name}>{item.name}</Text>
         <Text style={styles.email}>{item.email}</Text>
-        <Text style={[styles.badge, item.isPaid ? styles.paid : styles.free]}>
+        {/* <Text style={[styles.badge, item.isPaid ? styles.paid : styles.free]}>
           {item.isPaid ? '💎 Premium User' : 'Free User'}
-        </Text>
+        </Text> */}
       </View>
     </Pressable>
   );
