@@ -1,74 +1,205 @@
-// screens/AddFriendScreen.js
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert } from 'react-native';
+import {
+  View, Text, TextInput, TouchableOpacity,
+  StyleSheet, Alert, ActivityIndicator, KeyboardAvoidingView, Platform
+} from 'react-native';
 import { db, auth } from '../services/firebase';
-import { collection, doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 
 export default function AddFriendScreen() {
   const [email, setEmail] = useState('');
+  const [foundUser, setFoundUser] = useState(null);
+  const [loading, setLoading] = useState(false);
 
-  const handleAddFriend = async () => {
-    if (!email.trim()) return Alert.alert('Please enter an email.');
+  const currentUid = auth.currentUser?.uid;
+
+  const searchUserByEmail = async () => {
+    if (!email.trim()) return Alert.alert('Enter an email to search.');
+
+    setLoading(true);
+    setFoundUser(null);
 
     try {
-      const usersRef = collection(db, 'users');
-      const querySnapshot = await getDoc(doc(db, 'emails', email)); // mapping email -> uid
-      if (!querySnapshot.exists()) {
-        return Alert.alert('User not found.');
+      const safeEmail = email.trim().toLowerCase();
+      const emailDoc = await getDoc(doc(db, 'emails', safeEmail));
+      
+      if (!emailDoc.exists()) {
+        setLoading(false);
+        return Alert.alert('❌ User not found.');
       }
 
-      const friendUid = querySnapshot.data().uid;
-      const currentUid = auth.currentUser.uid;
+      const friendUid = emailDoc.data()?.uid;
+      if (!friendUid) {
+        setLoading(false);
+        return Alert.alert('❌ UID not found in email mapping.');
+      }
 
       if (friendUid === currentUid) {
-        return Alert.alert('You cannot add yourself.');
+        setLoading(false);
+        return Alert.alert('⚠️ You cannot add yourself.');
       }
 
-      // Add each other as friends (no request logic for simplicity)
-      await setDoc(doc(db, 'friends', currentUid, 'list', friendUid), { uid: friendUid }, { merge: true });
-      await setDoc(doc(db, 'friends', friendUid, 'list', currentUid), { uid: currentUid }, { merge: true });
+      const userDoc = await getDoc(doc(db, 'users', friendUid));
+      if (!userDoc.exists()) {
+        setLoading(false);
+        return Alert.alert('⚠️ User data not found.');
+      }
 
-      Alert.alert('✅ Friend added!');
-      setEmail('');
+      // Check if already added
+      const friendListDoc = await getDoc(doc(db, 'friends', currentUid, 'list', friendUid));
+      if (friendListDoc.exists()) {
+        setLoading(false);
+        return Alert.alert('✅ Already added as a friend.');
+      }
+
+      const userData = userDoc.data();
+      setFoundUser({ uid: friendUid, ...userData });
     } catch (error) {
-      console.log('Add Friend Error:', error);
-      Alert.alert('Something went wrong.');
+      console.error('🔥 Search Error:', error);
+      Alert.alert('Something went wrong while searching.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAddFriend = async () => {
+    if (!foundUser) return;
+
+    try {
+      const friendUid = foundUser.uid;
+
+      // Save friendship both ways
+      await setDoc(doc(db, 'friends', currentUid, 'list', friendUid), {
+        uid: friendUid,
+        name: foundUser.name || '',
+        email: foundUser.email || '',
+        addedAt: Date.now(),
+      });
+
+      await setDoc(doc(db, 'friends', friendUid, 'list', currentUid), {
+        uid: currentUid,
+        name: auth.currentUser.displayName || '',
+        email: auth.currentUser.email || '',
+        addedAt: Date.now(),
+      });
+
+      Alert.alert('🎉 Friend added successfully!');
+      setEmail('');
+      setFoundUser(null);
+    } catch (error) {
+      console.error('🔥 Add Friend Error:', error);
+      Alert.alert('Failed to add friend.');
     }
   };
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Add Friend by Email</Text>
-      <TextInput
-        placeholder="Enter friend's email"
-        value={email}
-        onChangeText={setEmail}
-        style={styles.input}
-        keyboardType="email-address"
-        autoCapitalize="none"
-      />
-      <TouchableOpacity style={styles.button} onPress={handleAddFriend}>
-        <Text style={styles.buttonText}>➕ Add Friend</Text>
-      </TouchableOpacity>
-    </View>
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      style={styles.container}
+    >
+      <Text style={styles.title}>🔍 Add a New Friend</Text>
+
+      <View style={styles.searchSection}>
+        <TextInput
+          style={styles.input}
+          placeholder="Enter email to search"
+          value={email}
+          onChangeText={setEmail}
+          keyboardType="email-address"
+          autoCapitalize="none"
+        />
+        <TouchableOpacity style={styles.searchButton} onPress={searchUserByEmail}>
+          {loading ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.searchButtonText}>Search</Text>
+          )}
+        </TouchableOpacity>
+      </View>
+
+      {foundUser && (
+        <View style={styles.card}>
+          <Text style={styles.name}>{foundUser.name || 'Unnamed User'}</Text>
+          <Text style={styles.email}>{foundUser.email}</Text>
+          <TouchableOpacity style={styles.addButton} onPress={handleAddFriend}>
+            <Text style={styles.addButtonText}>➕ Add Friend</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 24, backgroundColor: '#fff' },
-  title: { fontSize: 20, fontWeight: 'bold', marginBottom: 20 },
-  input: {
-    borderWidth: 1,
-    borderColor: '#ccc',
-    padding: 12,
-    borderRadius: 10,
+  container: {
+    flex: 1,
+    backgroundColor: '#f5f8ff',
+    padding: 24,
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: '700',
+    marginBottom: 24,
+    color: '#1a1a1a',
+    textAlign: 'center',
+  },
+  searchSection: {
+    flexDirection: 'row',
     marginBottom: 20,
   },
-  button: {
+  input: {
+    flex: 1,
+    height: 50,
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 12,
+    paddingHorizontal: 15,
+    backgroundColor: '#fff',
+    marginRight: 10,
+  },
+  searchButton: {
     backgroundColor: '#007AFF',
-    padding: 14,
+    borderRadius: 12,
+    paddingHorizontal: 20,
+    justifyContent: 'center',
+  },
+  searchButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
+  card: {
+    backgroundColor: '#fff',
+    padding: 20,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  name: {
+    fontSize: 20,
+    fontWeight: '600',
+    marginBottom: 6,
+    color: '#333',
+  },
+  email: {
+    fontSize: 16,
+    color: '#666',
+    marginBottom: 12,
+  },
+  addButton: {
+    backgroundColor: '#28A745',
+    paddingVertical: 12,
     borderRadius: 10,
     alignItems: 'center',
   },
-  buttonText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
+  addButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
 });

@@ -4,14 +4,15 @@ import {
   Text,
   TextInput,
   FlatList,
-  TouchableOpacity,
   StyleSheet,
   Modal,
   Pressable,
   KeyboardAvoidingView,
   Platform,
+  TouchableOpacity,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { auth, db } from '../services/firebase';
 import {
   collection,
@@ -22,36 +23,56 @@ import {
   serverTimestamp,
 } from 'firebase/firestore';
 
-export default function ChatScreen({ navigation }) {
+export default function ChatScreen({ route, navigation }) {
+  const { friend } = route.params;
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [seconds, setSeconds] = useState(0);
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [showLockModal, setShowLockModal] = useState(false);
   const [showWarningModal, setShowWarningModal] = useState(false);
+  const [menuVisible, setMenuVisible] = useState(false);
   const timerRef = useRef(null);
   const user = auth.currentUser;
 
+  const currentUserId = user?.uid;
+  const chatRoomId = [currentUserId, friend.uid].sort().join('_');
+
   useEffect(() => {
-    if (!user) return;
+    navigation.setOptions({
+      title: friend.name || 'Chat',
+      headerBackTitleVisible: false,
+      headerRight: () => (
+        <TouchableOpacity onPress={() => setMenuVisible(true)} style={{ marginRight: 16 }}>
+          <Ionicons name="ellipsis-vertical" size={24} color="#007AFF" />
+        </TouchableOpacity>
+      ),
+    });
+  }, [navigation, friend]);
+
+  useEffect(() => {
+    if (!user || !friend) return;
 
     const fetchMessages = async () => {
-      const userId = user.uid;
-      const messagesRef = collection(db, 'chats', userId, 'messages');
-      const q = query(messagesRef, orderBy('createdAt', 'desc'));
-      const snapshot = await getDocs(q);
+      try {
+        const messagesRef = collection(db, 'chats', chatRoomId, 'messages');
+        const q = query(messagesRef, orderBy('createdAt', 'desc'));
+        const snapshot = await getDocs(q);
 
-      const fetched = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        text: doc.data().text,
-        sender: doc.data().sender,
-      }));
+        const fetched = snapshot.docs.map((doc) => ({
+          id: doc.id,
+          text: doc.data().text,
+          sender: doc.data().sender,
+        }));
 
-      setMessages(fetched);
+        setMessages(fetched);
+      } catch (error) {
+        console.error('Error fetching messages:', error);
+      }
     };
 
     fetchMessages();
-  }, [user]);
+  }, [user, friend]);
 
   useEffect(() => {
     timerRef.current = setInterval(() => {
@@ -85,19 +106,17 @@ export default function ChatScreen({ navigation }) {
     if (!input.trim() || (!isSubscribed && seconds >= 60)) return;
 
     const newMessage = {
-      text: input,
-      sender: 'user',
+      text: input.trim(),
+      sender: currentUserId,
       createdAt: serverTimestamp(),
     };
 
     try {
-      const userId = user.uid;
-      const messagesRef = collection(db, 'chats', userId, 'messages');
-
+      const messagesRef = collection(db, 'chats', chatRoomId, 'messages');
       const docRef = await addDoc(messagesRef, newMessage);
 
       setMessages((prev) => [
-        { id: docRef.id, text: input, sender: 'user' },
+        { id: docRef.id, text: input.trim(), sender: currentUserId },
         ...prev,
       ]);
       setInput('');
@@ -106,16 +125,19 @@ export default function ChatScreen({ navigation }) {
     }
   };
 
-  const renderMessage = ({ item }) => (
-    <View
-      style={[
-        styles.messageBubble,
-        item.sender === 'user' ? styles.userBubble : styles.botBubble,
-      ]}
-    >
-      <Text style={styles.messageText}>{item.text}</Text>
-    </View>
-  );
+  const renderMessage = ({ item }) => {
+    const isMe = item.sender === currentUserId;
+    return (
+      <View
+        style={[
+          styles.messageBubble,
+          isMe ? styles.userBubble : styles.friendBubble,
+        ]}
+      >
+        <Text style={styles.messageText}>{item.text}</Text>
+      </View>
+    );
+  };
 
   const handleSubscribe = () => {
     setIsSubscribed(true);
@@ -125,95 +147,117 @@ export default function ChatScreen({ navigation }) {
     }, 1000);
   };
 
- return (
-  <KeyboardAvoidingView
-    behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    style={{ flex: 1 }}
-    keyboardVerticalOffset={Platform.OS === 'ios' ? 60 : 0}
-  >
-    <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }} edges={['bottom', 'left', 'right']}>
-      {/* Timer Bar */}
-      <View style={styles.timerBar}>
-        <Text style={styles.timerText}>
-          ⏱ {formatTime(seconds)} {isSubscribed ? '(Subscribed)' : '(Free)'}
-        </Text>
-      </View>
+  return (
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      style={{ flex: 1 }}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 60 : 0}
+    >
+      <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }} edges={['bottom']}>
+        {/* Timer */}
+        <View style={styles.timerBar}>
+          <Text style={styles.timerText}>
+            ⏱ {formatTime(seconds)} {isSubscribed ? '(Subscribed)' : '(Free)'}
+          </Text>
+        </View>
 
-      {/* Chat List */}
-      <View style={{ flex: 1 }}>
+        {/* Chat List */}
         <FlatList
           data={messages}
           inverted
           keyExtractor={(item) => item.id}
           renderItem={renderMessage}
-          contentContainerStyle={{ padding: 10, paddingBottom: 20 }}
+          contentContainerStyle={{ padding: 12 }}
         />
-      </View>
 
-      {/* Input */}
-      <View style={styles.inputContainer}>
-        <TextInput
-          style={styles.input}
-          placeholder="Type a message..."
-          value={input}
-          onChangeText={setInput}
-          editable={isSubscribed || seconds < 60}
-        />
-        <TouchableOpacity
-          onPress={sendMessage}
-          style={[
-            styles.sendButton,
-            !(isSubscribed || seconds < 60) && { backgroundColor: '#aaa' },
-          ]}
-          disabled={!(isSubscribed || seconds < 60)}
-        >
-          <Text style={styles.sendText}>Send</Text>
-        </TouchableOpacity>
-      </View>
-    </SafeAreaView>
-
-    {/* 🔒 Lock Modal */}
-    <Modal visible={showLockModal} transparent animationType="slide">
-      <View style={styles.modalOverlay}>
-        <View style={styles.modalBox}>
-          <Text style={styles.modalTitle}>Trial Ended</Text>
-          <Text style={styles.modalText}>
-            Your free trial has ended. Subscribe for ¥38/month to continue chatting.
-          </Text>
-          <Pressable style={styles.subscribeButton} onPress={handleSubscribe}>
-            <Text style={styles.subscribeText}>Subscribe Now</Text>
+        {/* Input */}
+        <View style={styles.inputContainer}>
+          <TextInput
+            style={styles.input}
+            placeholder="Type a message..."
+            value={input}
+            onChangeText={setInput}
+            editable={isSubscribed || seconds < 60}
+          />
+          <Pressable
+            onPress={sendMessage}
+            style={[
+              styles.sendButton,
+              !(isSubscribed || seconds < 60) && { backgroundColor: '#aaa' },
+            ]}
+            disabled={!(isSubscribed || seconds < 60)}
+          >
+            <Text style={styles.sendText}>Send</Text>
           </Pressable>
         </View>
-      </View>
-    </Modal>
+      </SafeAreaView>
 
-    {/* ⚠️ Warning Modal */}
-    <Modal visible={showWarningModal} transparent animationType="fade">
-      <View style={styles.modalOverlay}>
-        <View style={styles.modalBox}>
-          <Text style={styles.modalTitle}>⏰ Time Running Out</Text>
-          <Text style={styles.modalText}>
-            You have less than 10 seconds left in your free trial.
-          </Text>
-          <Pressable onPress={() => setShowWarningModal(false)} style={styles.subscribeButton}>
-            <Text style={styles.subscribeText}>Continue</Text>
-          </Pressable>
+      {/* 🔒 Lock Modal */}
+      <Modal visible={showLockModal} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBox}>
+            <Text style={styles.modalTitle}>Trial Ended</Text>
+            <Text style={styles.modalText}>
+              Your free trial has ended. Subscribe for ¥38/month to continue chatting.
+            </Text>
+            <Pressable style={styles.subscribeButton} onPress={handleSubscribe}>
+              <Text style={styles.subscribeText}>Subscribe Now</Text>
+            </Pressable>
+          </View>
         </View>
-      </View>
-    </Modal>
-  </KeyboardAvoidingView>
-);
-};
+      </Modal>
+
+      {/* ⚠️ Warning Modal */}
+      <Modal visible={showWarningModal} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBox}>
+            <Text style={styles.modalTitle}>⏰ Time Running Out</Text>
+            <Text style={styles.modalText}>
+              You have less than 10 seconds left in your free trial.
+            </Text>
+            <Pressable onPress={() => setShowWarningModal(false)} style={styles.subscribeButton}>
+              <Text style={styles.subscribeText}>Continue</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ⋮ Dotted Menu Modal */}
+      <Modal
+        visible={menuVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setMenuVisible(false)}
+      >
+        <Pressable style={styles.menuOverlay} onPress={() => setMenuVisible(false)}>
+          <View style={styles.menuBox}>
+            <Pressable style={styles.menuItem} onPress={() => {
+              setMenuVisible(false);
+              // TODO: Add profile navigation
+            }}>
+              <Text style={styles.menuText}>👤 View Profile</Text>
+            </Pressable>
+
+            <Pressable style={styles.menuItem} onPress={() => {
+              setMenuVisible(false);
+              // TODO: Add block/report functionality
+            }}>
+              <Text style={styles.menuText}>🚫 Block User</Text>
+            </Pressable>
+          </View>
+        </Pressable>
+      </Modal>
+    </KeyboardAvoidingView>
+  );
+}
 
 const styles = StyleSheet.create({
-  wrapper: { flex: 1, backgroundColor: '#fff' },
-  container: { flex: 1 },
   timerBar: {
-    paddingVertical: 8,
-    backgroundColor: '#f2f2f2',
+    paddingVertical: 10,
+    backgroundColor: '#f0f0f0',
     alignItems: 'center',
-    borderBottomColor: '#ddd',
     borderBottomWidth: 1,
+    borderColor: '#ddd',
   },
   timerText: {
     fontSize: 16,
@@ -230,17 +274,19 @@ const styles = StyleSheet.create({
     backgroundColor: '#DCF8C6',
     alignSelf: 'flex-end',
   },
-  botBubble: {
-    backgroundColor: '#eee',
+  friendBubble: {
+    backgroundColor: '#e9e9e9',
     alignSelf: 'flex-start',
   },
-  messageText: { fontSize: 16 },
+  messageText: {
+    fontSize: 16,
+    color: '#000',
+  },
   inputContainer: {
     flexDirection: 'row',
     padding: 10,
-    paddingBottom: Platform.OS === 'android' ? 20 : 10,
-    borderTopColor: '#ccc',
     borderTopWidth: 1,
+    borderColor: '#ddd',
     backgroundColor: '#fff',
   },
   input: {
@@ -251,6 +297,7 @@ const styles = StyleSheet.create({
     paddingVertical: Platform.OS === 'ios' ? 12 : 8,
     borderRadius: 25,
     fontSize: 16,
+    backgroundColor: '#fff',
   },
   sendButton: {
     marginLeft: 10,
@@ -260,7 +307,10 @@ const styles = StyleSheet.create({
     borderRadius: 25,
     justifyContent: 'center',
   },
-  sendText: { color: '#fff', fontWeight: 'bold' },
+  sendText: {
+    color: '#fff',
+    fontWeight: 'bold',
+  },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
@@ -282,4 +332,29 @@ const styles = StyleSheet.create({
     borderRadius: 25,
   },
   subscribeText: { color: '#fff', fontWeight: 'bold' },
+
+  // Menu styles
+  menuOverlay: {
+    flex: 1,
+    justifyContent: 'flex-start',
+    alignItems: 'flex-end',
+    paddingTop: 60,
+    paddingRight: 20,
+    backgroundColor: 'rgba(0,0,0,0.1)',
+  },
+  menuBox: {
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    paddingVertical: 10,
+    width: 180,
+    elevation: 5,
+  },
+  menuItem: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+  },
+  menuText: {
+    fontSize: 16,
+    color: '#333',
+  },
 });

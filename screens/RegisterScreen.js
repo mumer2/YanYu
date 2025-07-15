@@ -24,49 +24,44 @@ export default function RegisterScreen({ navigation }) {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const handleRegister = async () => {
-    if (!name || !email || !password) {
-      Alert.alert('Error', 'Please fill in all fields.');
-      return;
-    }
+ const handleRegister = async () => {
+  if (!name || !email || !password) {
+    Alert.alert('Error', 'Please fill in all fields.');
+    return;
+  }
 
-    setLoading(true);
+  setLoading(true);
 
-    try {
-      // 1️⃣ Create account
-      const userCredential = await createUserWithEmailAndPassword(auth, email.trim(), password);
+  try {
+    const userCredential = await createUserWithEmailAndPassword(auth, email.trim(), password);
 
-      // 2️⃣ Set display name
-      await updateProfile(userCredential.user, { displayName: name });
+    await updateProfile(userCredential.user, { displayName: name });
 
-      // 3️⃣ Save user data to Firestore
-      await setDoc(doc(db, 'users', userCredential.user.uid), {
-        uid: userCredential.user.uid,
-        name,
-        email: userCredential.user.email,
-        createdAt: serverTimestamp(),
-        role: 'user',
-        isPaid: false,
-        language: 'en',
-      });
+    await setDoc(doc(db, 'users', userCredential.user.uid), {
+      uid: userCredential.user.uid,
+      name,
+      email: userCredential.user.email,
+      createdAt: serverTimestamp(),
+      role: 'user',
+      isPaid: false,
+      language: 'en',
+    });
 
-      // 4️⃣ Sign out to avoid auto-login (controlled by onAuthStateChanged)
-      await signOut(auth);
+    const cleanEmail = email.trim().toLowerCase();
+    await setDoc(doc(db, 'emails', cleanEmail), {
+      uid: userCredential.user.uid,
+    });
 
-      // 5️⃣ Navigate directly to login screen
-      navigation.reset({
-        index: 0,
-        routes: [{ name: 'Login' }],
-      });
+    await signOut(auth);
+    Alert.alert('Success', 'Account created! Please log in.');
+  } catch (error) {
+    console.error('Registration Error:', error);
+    Alert.alert('Registration Failed', error.message);
+  } finally {
+    setLoading(false);
+  }
+};
 
-      Alert.alert('Success', 'Account created! Please log in.');
-
-    } catch (error) {
-      Alert.alert('Registration Failed', error.message);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   return (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.container}>

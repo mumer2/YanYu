@@ -1,39 +1,83 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
   TextInput,
   FlatList,
-  TouchableOpacity,
   StyleSheet,
   Modal,
   Pressable,
   KeyboardAvoidingView,
   Platform,
+  TouchableOpacity,
 } from 'react-native';
-import { auth } from '../services/firebase';
-import { signOut } from 'firebase/auth';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-
-const chats = [
-  {
-    id: '1',
-    name: 'Jane Doe',
-    lastMessage: 'Hi! How are you?',
-    time: '12:30 PM',
-  },
-  {
-    id: '2',
-    name: 'John Smith',
-    lastMessage: 'Let’s meet tomorrow.',
-    time: '09:15 AM',
-  },
-];
+import { auth, db } from '../services/firebase';
+import {
+  collection,
+  doc,
+  getDoc,
+  onSnapshot,
+  query,
+  orderBy,
+  getDocs,
+} from 'firebase/firestore';
+import { signOut } from 'firebase/auth';
 
 export default function HomeScreen({ navigation }) {
   const [search, setSearch] = useState('');
   const [menuVisible, setMenuVisible] = useState(false);
+  const [chats, setChats] = useState([]);
+  const user = auth.currentUser;
+
+  useEffect(() => {
+    if (!user) return;
+
+    const chatsRef = collection(db, 'friends', user.uid, 'list');
+    const unsubscribe = onSnapshot(chatsRef, async (snapshot) => {
+      try {
+        const chatList = await Promise.all(
+          snapshot.docs.map(async (docSnap) => {
+            const friendId = docSnap.id;
+            const friendDataRef = doc(db, 'users', friendId);
+            const friendDataSnap = await getDoc(friendDataRef);
+
+            let name = 'Unknown';
+            let email = '';
+
+            if (friendDataSnap.exists()) {
+              const data = friendDataSnap.data();
+              name = data.name || 'No Name';
+              email = data.email || '';
+            }
+
+            const roomId = [user.uid, friendId].sort().join('_');
+            const msgQuery = query(
+              collection(db, 'chats', roomId, 'messages'),
+              orderBy('createdAt', 'desc')
+            );
+            const msgSnap = await getDocs(msgQuery);
+            const lastMessage = msgSnap.docs[0]?.data()?.text || '';
+
+            return {
+              id: friendId,
+              name,
+              email,
+              lastMessage,
+              time: '',
+            };
+          })
+        );
+
+        setChats(chatList);
+      } catch (error) {
+        console.error('Error fetching chats:', error);
+      }
+    });
+
+    return () => unsubscribe(); // cleanup listener on unmount
+  }, [user]);
 
   const filteredChats = chats.filter((chat) =>
     chat.name.toLowerCase().includes(search.toLowerCase())
@@ -46,16 +90,21 @@ export default function HomeScreen({ navigation }) {
   const renderChatItem = ({ item }) => (
     <TouchableOpacity
       style={styles.chatItem}
-      onPress={() => navigation.navigate('Chat')}
+      onPress={() =>
+        navigation.navigate('Chat', {
+          friend: { uid: item.id, name: item.name, email: item.email },
+        })
+      }
     >
       <View style={styles.chatAvatar}>
         <Ionicons name="person-circle" size={42} color="#555" />
       </View>
       <View style={styles.chatContent}>
         <Text style={styles.chatName}>{item.name}</Text>
-        <Text style={styles.chatMessage}>{item.lastMessage}</Text>
+        <Text style={styles.chatMessage} numberOfLines={1}>
+          {item.lastMessage || 'No messages yet.'}
+        </Text>
       </View>
-      <Text style={styles.chatTime}>{item.time}</Text>
     </TouchableOpacity>
   );
 
@@ -75,7 +124,12 @@ export default function HomeScreen({ navigation }) {
 
         {/* Search Bar */}
         <View style={styles.searchBar}>
-          <Ionicons name="search" size={20} color="#888" style={{ marginRight: 8 }} />
+          <Ionicons
+            name="search"
+            size={20}
+            color="#888"
+            style={{ marginRight: 8 }}
+          />
           <TextInput
             placeholder="Search chats..."
             style={styles.searchInput}
@@ -89,7 +143,7 @@ export default function HomeScreen({ navigation }) {
           data={filteredChats}
           keyExtractor={(item) => item.id}
           renderItem={renderChatItem}
-          contentContainerStyle={{ paddingBottom: 60 }} // extra bottom space
+          contentContainerStyle={{ paddingBottom: 60 }}
         />
 
         {/* Dotted Menu */}
@@ -104,25 +158,34 @@ export default function HomeScreen({ navigation }) {
             onPress={() => setMenuVisible(false)}
           >
             <View style={styles.menuBox}>
-             <TouchableOpacity onPress={() => {
-  setMenuVisible(false);
-  navigation.navigate('Profile');
-}}>
-  <Text style={styles.menuItem}>👤 Profile</Text>
-</TouchableOpacity>
-
-              <Pressable
-                style={styles.menuItem}
+              <TouchableOpacity
                 onPress={() => {
                   setMenuVisible(false);
-                  navigation.navigate('Settings'); // Ensure screen exists
+                  navigation.navigate('Profile');
                 }}
+                style={styles.menuItem}
               >
-                <Text style={styles.menuText}>Settings</Text>
-              </Pressable>
-              <Pressable style={styles.menuItem} onPress={handleLogout}>
-                <Text style={[styles.menuText, { color: 'red' }]}>Logout</Text>
-              </Pressable>
+                <Text style={styles.menuItemText}>👤 Profile</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => {
+                  setMenuVisible(false);
+                  navigation.navigate('Settings');
+                }}
+                style={styles.menuItem}
+              >
+                <Text style={styles.menuItemText}>⚙️ Settings</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={handleLogout}
+                style={styles.menuItem}
+              >
+                <Text style={[styles.menuItemText, { color: 'red' }]}>
+                  🚪 Logout
+                </Text>
+              </TouchableOpacity>
             </View>
           </Pressable>
         </Modal>
@@ -171,20 +234,27 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'flex-start',
     alignItems: 'flex-end',
-    paddingTop: 50,
+    paddingTop: 60,
     paddingRight: 20,
-    backgroundColor: 'rgba(0,0,0,0.2)',
+    backgroundColor: 'rgba(0,0,0,0.1)',
   },
   menuBox: {
     backgroundColor: '#fff',
-    borderRadius: 8,
-    paddingVertical: 10,
-    width: 150,
+    borderRadius: 10,
+    paddingVertical: 8,
+    width: 180,
     elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
   },
   menuItem: {
-    paddingVertical: 10,
-    paddingHorizontal: 15,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
   },
-  menuText: { fontSize: 16 },
+  menuItemText: {
+    fontSize: 16,
+    color: '#333',
+  },
 });
