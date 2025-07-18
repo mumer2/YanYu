@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -7,6 +7,7 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { auth, db } from './services/firebase';
 import { doc, setDoc } from 'firebase/firestore';
 import { registerForPushNotificationsAsync } from './services/notifications';
+import * as Notifications from 'expo-notifications';
 
 // Screens
 import SplashScreen from './screens/SplashScreen';
@@ -21,6 +22,15 @@ import ProfileScreen from './screens/ProfileScreen';
 import EditProfileScreen from './screens/EditProfileScreen';
 import SettingsScreen from './screens/SettingsScreen';
 import DeleteAccountScreen from './screens/DeleteAccountScreen';
+
+// Notification handler: show alerts in foreground
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: true,
+  }),
+});
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -42,8 +52,8 @@ function MainTabs() {
       })}
     >
       <Tab.Screen name="Home" component={HomeScreen} />
-      <Tab.Screen name="AddFriend" component={AddFriendScreen} options={{ headerShown: true, title: 'Add Friends' }} />
-      <Tab.Screen name="FriendsList" component={FriendsListScreen} options={{ headerShown: true, title: 'Friends List' }} />
+      <Tab.Screen name="AddFriend" component={AddFriendScreen} options={{ title: 'Add Friends' }} />
+      <Tab.Screen name="FriendsList" component={FriendsListScreen} options={{ title: 'Friends List' }} />
     </Tab.Navigator>
   );
 }
@@ -51,6 +61,7 @@ function MainTabs() {
 export default function App() {
   const [user, setUser] = useState(null);
   const [initializing, setInitializing] = useState(true);
+  const navigationRef = useRef(null); // for navigating on notification tap
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -59,11 +70,13 @@ export default function App() {
 
       if (firebaseUser) {
         const token = await registerForPushNotificationsAsync();
-
         if (token) {
-          await setDoc(doc(db, 'users', firebaseUser.uid), {
-            pushToken: token,
-          }, { merge: true });
+          await setDoc(
+            doc(db, 'users', firebaseUser.uid),
+            { pushToken: token },
+            { merge: true }
+          );
+          console.log('✅ Push token saved:', token);
         }
       }
     });
@@ -71,10 +84,31 @@ export default function App() {
     return unsubscribe;
   }, []);
 
+  // Notification events: foreground & tapped
+  useEffect(() => {
+    const receivedSub = Notifications.addNotificationReceivedListener((notification) => {
+      console.log('📩 Notification received:', notification);
+    });
+
+    const responseSub = Notifications.addNotificationResponseReceivedListener((response) => {
+      console.log('📬 Notification tapped:', response);
+
+      const friendId = response.notification.request.content.data?.friendId;
+      if (friendId && user) {
+        navigationRef.current?.navigate('Chat', { friend: { uid: friendId } });
+      }
+    });
+
+    return () => {
+      receivedSub.remove();
+      responseSub.remove();
+    };
+  }, [user]);
+
   if (initializing) return <SplashScreen />;
 
   return (
-    <NavigationContainer>
+    <NavigationContainer ref={navigationRef}>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {user ? (
           <>

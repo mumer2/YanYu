@@ -16,6 +16,8 @@
       "supportsTablet": true
     },
     "android": {
+      "package": "com.m_umermalik.yanyu",
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/logo.png",
         "backgroundColor": "#ffffff"
@@ -26,7 +28,13 @@
       "favicon": "./assets/logo.png"
     },
     "plugins": [
-      "expo-localization"
-    ]
+      "expo-localization",
+      "expo-notifications"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "f71bef0e-4e1d-4cdf-b95e-ff67b958bf0f"
+      }
+    }
   }
 }

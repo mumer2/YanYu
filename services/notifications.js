@@ -19,16 +19,19 @@ export async function registerForPushNotificationsAsync() {
       return;
     }
 
-    token = (await Notifications.getExpoPushTokenAsync()).data;
-    console.log('Expo Push Token:', token);
+    // ✅ Use device FCM push token (for standalone builds)
+    const { data: fcmToken } = await Notifications.getDevicePushTokenAsync();
+    console.log('✅ FCM Token:', fcmToken);
+    token = fcmToken;
   } else {
-    alert('Must use physical device for Push Notifications');
+    alert('Must use physical device');
   }
 
   if (Platform.OS === 'android') {
-    Notifications.setNotificationChannelAsync('default', {
+    await Notifications.setNotificationChannelAsync('default', {
       name: 'default',
       importance: Notifications.AndroidImportance.MAX,
+      sound: 'default',
     });
   }
 

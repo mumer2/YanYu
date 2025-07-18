@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "255890557176",
+    "project_id": "yanyu-c2c83",
+    "storage_bucket": "yanyu-c2c83.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:255890557176:android:60f8bdb35bd94a0fca130d",
+        "android_client_info": {
+          "package_name": "com.m_umermalik.yanyu"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBbui4fRhOM7dJWLC71cxLorWd5aXvG4PM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

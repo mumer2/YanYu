@@ -66,7 +66,6 @@ export default function ChatScreen({ route, navigation }) {
           const data = docSnap.data();
           const isUnread = !data.readBy?.includes(currentUserId);
 
-          // Mark as read if not already
           if (isUnread) {
             await updateDoc(docSnap.ref, {
               readBy: [...(data.readBy || []), currentUserId],
@@ -137,7 +136,7 @@ export default function ChatScreen({ route, navigation }) {
       if (friendSnap.exists()) {
         const { pushToken } = friendSnap.data();
         if (pushToken) {
-          await sendPushNotification(pushToken, user.displayName || 'New Message', input.trim());
+          await sendPushNotification(pushToken, user.displayName || 'New Message', input.trim(), { chatId: chatRoomId });
         }
       }
     } catch (error) {
